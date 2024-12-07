@@ -75,3 +75,17 @@ pub mod time;
 pub mod fs;
 #[cfg(feature = "net")]
 pub mod net;
+
+#[macro_export]
+macro_rules! with_color {
+    ($color_code:expr, $($arg:tt)*) => {{
+        format_args!("\u{1B}[{}m{}\u{1B}[m", $color_code as u8, format_args!($($arg)*))
+    }};
+}
+
+#[macro_export]
+macro_rules! print_with_color {
+    ($color_code:expr, $($arg:tt)*) => {
+        $crate::io::__print_impl($crate::with_color!($color_code, $($arg)*));
+    }
+}
