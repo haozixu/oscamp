@@ -27,6 +27,8 @@ const CMD_TABLE: &[(&str, CmdHandler)] = &[
     ("pwd", do_pwd),
     ("rm", do_rm),
     ("uname", do_uname),
+    ("rename", do_rename),
+    ("mv", do_mv),
 ];
 
 fn file_type_to_char(ty: FileType) -> char {
@@ -258,6 +260,98 @@ fn do_uname(_args: &str) {
         arch = arch,
         plat = platform,
     );
+}
+
+fn do_rename(args: &str) {
+    let arguments: Vec<_> = args.split_whitespace().collect();
+    if arguments.len() != 2 {
+        print_err!("rename", "rename accepts 2 arguments");
+        return;
+    }
+
+    let src = arguments[0];
+    let dst = arguments[1];
+    
+    let src_meta = fs::metadata(src);
+    if src_meta.is_err() {
+        print_err!("rename", "source does not exist");
+        return;
+    }
+
+    let dst_meta = fs::metadata(dst);
+    if !dst_meta.is_err() {
+        print_err!("rename", "destination name already exist");
+        return;
+    }
+
+    if let Err(e) = fs::rename(src, dst) {
+        print_err!("mv", "fs::rename failed", e);
+    }
+}
+
+fn do_mv(args: &str) {
+    let arguments: Vec<&str> = args.split_whitespace().collect();
+    if arguments.len() != 2 {
+        print_err!("mv", "mv accepts 2 argments");
+        return;
+    }
+
+    let src = arguments[0];
+    let dst = arguments[1];
+    // if let Ok(metadata) = fs::metadata(dst) {
+    //     if metadata.is_dir() {
+    //         let mut dst_path = std::env::current_dir().unwrap();
+    //         dst_path.push(dst);
+    //         dst_path.push(Path::new(src).file_name().unwrap());
+    //         if let Err(e) = fs::rename(src, dst_path.to_str().unwrap()) {
+    //             print_err!("mv", "fs::rename failed", e);
+    //         }
+    //         return;
+    //     }
+    // }
+
+    // Our simple mv restricts src to be a regular file and dst to be an existing dir
+    let src_meta = fs::metadata(src);
+    if src_meta.is_err() {
+        print_err!("mv", "source file does not exist");
+        return;
+    }
+    if !src_meta.unwrap().is_file() {
+        print_err!("mv", "source file should be regular file (for now)");
+        return;
+    }
+
+    let dst_meta = fs::metadata(dst);
+    if dst_meta.is_err() {
+        print_err!("mv", "destination dir does not exist");
+        return;
+    }
+    if !dst_meta.unwrap().is_dir() {
+        print_err!("mv", "destination is not a directory");
+        return;
+    }
+
+    let src_parts: Vec<_> = src.split("/").collect();
+    let src_file_name = src_parts.last().unwrap();
+
+    // TODO: convert dst to an absolute path
+    let dst_dir = if dst.ends_with("/") {
+        &dst[0..dst.len() - 1]
+    } else {
+        dst
+    };
+
+    let mut dst_path = String::new();
+    if dst_dir.starts_with("./") {
+        let cur_dir = std::env::current_dir().unwrap();
+        dst_path = format!("{}/{}/{}", cur_dir, &dst_dir[2..], src_file_name);
+    } else {
+        dst_path = format!("{}/{}", dst_dir, src_file_name);
+    }
+
+    if let Err(e) = fs::rename(src, &dst_path) {
+        print_err!("mv", "fs::rename failed", e);
+    }
 }
 
 fn do_help(_args: &str) {
