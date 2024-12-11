@@ -50,7 +50,7 @@ PFLASH ?= y
 PFLASH_IMG ?= pflash.img
 
 DISK_IMG ?= disk.img
-QEMU_LOG ?= y
+QEMU_LOG ?= n
 NET_DUMP ?= n
 NET_DEV ?= user
 VFIO_PCI ?=

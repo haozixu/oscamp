@@ -8,6 +8,7 @@ use axtask::current;
 use axtask::TaskExtRef;
 use axhal::paging::MappingFlags;
 use arceos_posix_api as api;
+use memory_addr::{MemoryAddr, VirtAddrRange};
 
 const SYS_IOCTL: usize = 29;
 const SYS_OPENAT: usize = 56;
@@ -100,7 +101,7 @@ bitflags::bitflags! {
 fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
     ax_println!("handle_syscall [{}] ...", syscall_num);
     let ret = match syscall_num {
-         SYS_IOCTL => sys_ioctl(tf.arg0() as _, tf.arg1() as _, tf.arg2() as _) as _,
+        SYS_IOCTL => sys_ioctl(tf.arg0() as _, tf.arg1() as _, tf.arg2() as _) as _,
         SYS_SET_TID_ADDRESS => sys_set_tid_address(tf.arg0() as _),
         SYS_OPENAT => sys_openat(tf.arg0() as _, tf.arg1() as _, tf.arg2() as _, tf.arg3() as _),
         SYS_CLOSE => sys_close(tf.arg0() as _),
@@ -138,9 +139,29 @@ fn sys_mmap(
     prot: i32,
     flags: i32,
     fd: i32,
-    _offset: isize,
+    offset: isize,
 ) -> isize {
-    unimplemented!("no sys_mmap!");
+    let mmap_prot = MmapProt::from_bits(prot).unwrap();
+    let mapping_flags = MappingFlags::from(mmap_prot) | MappingFlags::WRITE;
+
+    if flags != MmapFlags::MAP_PRIVATE.bits() {
+        todo!("mmap flags other than MAP_PRIVATE are not implemented");
+    }
+
+    let len = length.align_up_4k();
+    let cur_task = axtask::current();
+    let mut aspace = cur_task.task_ext().aspace.lock();
+
+    let va_range = VirtAddrRange::from_start_size(aspace.base(), aspace.size());
+    let start_va = aspace.find_free_area((addr as usize).into(), len, va_range).unwrap();
+    if aspace.map_alloc(start_va, len, mapping_flags, true).is_err() {
+        return 0;
+    }
+
+    if api::sys_read(fd, start_va.as_mut_ptr() as *mut c_void, len) < 0 {
+        return 0;
+    }
+    return start_va.as_usize() as isize
 }
 
 fn sys_openat(dfd: c_int, fname: *const c_char, flags: c_int, mode: api::ctypes::mode_t) -> isize {
