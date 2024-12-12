@@ -9,7 +9,7 @@ extern crate axstd as std;
 use alloc::string::ToString;
 use riscv_vcpu::AxVCpuExitReason;
 use axerrno::{ax_err_type, AxResult};
-use memory_addr::VirtAddr;
+use memory_addr::{MemoryAddr, VirtAddr};
 use alloc::string::String;
 use std::fs::File;
 use riscv_vcpu::RISCVVCpu;
@@ -60,7 +60,7 @@ fn main() {
                     assert_eq!(addr, 0x2200_0000.into(), "Now we ONLY handle pflash#2.");
                     let mapping_flags = MappingFlags::from_bits(0xf).unwrap();
                     // Passthrough-Mode
-                    let _ = aspace.map_linear(addr, addr.as_usize().into(), 4096, mapping_flags);
+                    // let _ = aspace.map_linear(addr, addr.as_usize().into(), 4096, mapping_flags);
 
                     /*
                     // Emulator-Mode
@@ -69,6 +69,11 @@ fn main() {
                     aspace.map_alloc(addr, 4096, mapping_flags, true);
                     aspace.write(addr, buf.as_bytes());
                     */
+                    // Emulator-Mode
+                    let (file, file_size) = open_image_file("/sbin/pflash.img").unwrap();
+                    let map_size = file_size.align_up_4k();
+                    aspace.map_alloc(addr, map_size, mapping_flags, true);
+                    load_file(file, file_size, addr, &aspace).unwrap();
                 },
                 _ => {
                     panic!("Unhandled VM-Exit: {:?}", exit_reason);
@@ -81,9 +86,8 @@ fn main() {
     }
 }
 
-fn load_vm_image(image_path: String, image_load_gpa: VirtAddr, aspace: &AddrSpace) -> AxResult {
+fn load_file(image_file: File, image_size: usize, image_load_gpa: VirtAddr, aspace: &AddrSpace) -> AxResult {
     use std::io::{BufReader, Read};
-    let (image_file, image_size) = open_image_file(image_path.as_str())?;
 
     let image_load_regions = aspace
         .translated_byte_buffer(image_load_gpa, image_size)
@@ -94,12 +98,19 @@ fn load_vm_image(image_path: String, image_load_gpa: VirtAddr, aspace: &AddrSpac
         file.read_exact(buffer).map_err(|err| {
             ax_err_type!(
                 Io,
-                format!("Failed in reading from file {}, err {:?}", image_path, err)
+                // format!("Failed in reading from file {}, err {:?}", image_path, err)
+                format!("Failed in reading from file, err {:?}", err)
             )
         })?
     }
 
     Ok(())
+}
+
+fn load_vm_image(image_path: String, image_load_gpa: VirtAddr, aspace: &AddrSpace) -> AxResult {
+    let (image_file, image_size) = open_image_file(image_path.as_str())?;
+
+    load_file(image_file, image_size, image_load_gpa, aspace)
 }
 
 fn vcpu_run(arch_vcpu: &mut RISCVVCpu) -> AxResult<AxVCpuExitReason> {
